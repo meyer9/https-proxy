@@ -5,7 +5,7 @@
 ## Installation
 
 ```bash
-go install github.com/meyer9/https-proxy
+go get -u github.com/meyer9/https-proxy
 ```
 
 ## Usage
