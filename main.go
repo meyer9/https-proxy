@@ -77,6 +77,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Server Error", http.StatusBadGateway)
 		log.Printf("error: %s", err)
+		return
 	}
 
 	defer resp.Body.Close()
