@@ -75,9 +75,10 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(newReq)
 	if err != nil {
-		http.Error(w, "Server Error", http.StatusInternalServerError)
-		log.Fatal("ServeHTTP:", err)
+		http.Error(w, "Server Error", http.StatusBadGateway)
+		log.Printf("error: %s", err)
 	}
+
 	defer resp.Body.Close()
 
 	delHopHeaders(resp.Header)
