@@ -7,8 +7,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+
+	"github.com/koding/websocketproxy"
 )
 
 // Hop-by-hop headers. These are removed when sent to the backend.
@@ -53,40 +56,52 @@ type proxy struct {
 }
 
 func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Scheme == "http" {
-		r.URL.Scheme = "https"
-		http.Redirect(w, r, r.URL.String(), 301)
+	upgrade := false
+	for _, header := range r.Header["Upgrade"] {
+		if header == "websocket" {
+			upgrade = true
+			break
+		}
 	}
 
 	client := &http.Client{}
 
-	newReq, err := http.NewRequest(r.Method, fmt.Sprintf("http://%s%s", p.proxyTo, r.RequestURI), r.Body)
-	if err != nil {
-		panic(err)
-	}
+	if !upgrade {
+		newReq, err := http.NewRequest(r.Method, fmt.Sprintf("http://%s%s", p.proxyTo, r.RequestURI), r.Body)
+		if err != nil {
+			panic(err)
+		}
 
-	delHopHeaders(r.Header)
+		delHopHeaders(r.Header)
 
-	newReq.Header = r.Header
+		newReq.Header = r.Header
 
-	if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		appendHostToXForwardHeader(newReq.Header, clientIP)
-	}
+		if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			appendHostToXForwardHeader(newReq.Header, clientIP)
+		}
 
-	resp, err := client.Do(newReq)
-	if err != nil {
-		http.Error(w, "Server Error", http.StatusBadGateway)
-		log.Printf("error: %s", err)
+		resp, err := client.Do(newReq)
+		if err != nil {
+			http.Error(w, "Server Error", http.StatusBadGateway)
+			log.Printf("error: %s", err)
+			return
+		}
+
+		defer resp.Body.Close()
+
+		delHopHeaders(resp.Header)
+
+		copyHeader(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
 		return
 	}
 
-	defer resp.Body.Close()
-
-	delHopHeaders(resp.Header)
-
-	copyHeader(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	backendURL, err := url.Parse(fmt.Sprintf("ws://%s", p.proxyTo))
+	if err != nil {
+		panic(err)
+	}
+	websocketproxy.NewProxy(backendURL).ServeHTTP(w, r)
 }
 
 func main() {
